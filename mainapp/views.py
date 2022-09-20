@@ -1,19 +1,19 @@
 import logging
 
+from django.conf import settings
 from django.contrib import messages
-from django.http.response import HttpResponseRedirect
-from django.utils.translation import gettext_lazy as _
-from mainapp import tasks as mainapp_tasks
-
 from django.contrib.auth.mixins import (
     LoginRequiredMixin,
-    PermissionRequiredMixin, UserPassesTestMixin,
+    PermissionRequiredMixin,
+    UserPassesTestMixin,
 )
-from django.http import JsonResponse, FileResponse
+from django.core.cache import cache
+from django.http import FileResponse, JsonResponse
+from django.http.response import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse_lazy
-from django.views import View
+from django.utils.translation import gettext_lazy as _
 from django.views.generic import (
     CreateView,
     DeleteView,
@@ -21,13 +21,12 @@ from django.views.generic import (
     ListView,
     TemplateView,
     UpdateView,
+    View,
 )
 
-from config import settings
 from mainapp import forms as mainapp_forms
 from mainapp import models as mainapp_models
-
-from django.core.cache import cache
+from mainapp import tasks as mainapp_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -102,16 +101,25 @@ class CoursesDetailView(TemplateView):
 
         cached_feedback = cache.get(f"feedback_list_{pk}")
         if not cached_feedback:
-            context[
-                "feedback_list"
-            ] = mainapp_models.CourseFeedback.objects.filter(
-                course=context["course_object"]
-            ).order_by(
-                "-created", "-rating"
-            )[:5].select_related()
+            context["feedback_list"] = (
+                mainapp_models.CourseFeedback.objects.filter(
+                    course=context["course_object"]
+                )
+                .order_by("-created", "-rating")[:5]
+                .select_related()
+            )
             cache.set(
                 f"feedback_list_{pk}", context["feedback_list"], timeout=300
             )  # 5 minutes
+
+            # Archive object for tests --->
+            # import pickle
+            # with open(
+            #     f"mainapp/fixtures/006_feedback_list_{pk}.bin", "wb"
+            # ) as outf:
+            #     pickle.dump(context["feedback_list"], outf)
+            # <--- Archive object for tests
+
         else:
             context["feedback_list"] = cached_feedback
 
@@ -195,4 +203,3 @@ class LogDownloadView(UserPassesTestMixin, View):
 
     def get(self, *args, **kwargs):
         return FileResponse(open(settings.LOG_FILE, "rb"))
-
